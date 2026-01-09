@@ -30,11 +30,12 @@ class DigitizerApp:
         # --- State Variables ---
         self.image = None
         self.photo = None
-        self.calibration_points = [] # Stores pixel (x,y) of clicked points
+        self.calibration_points = [[], [], [], [], []] # Stores pixel (x,y) of clicked points
         self.calibrating = False
         self.calibration_step = 0
+        self.calibration_block = 0
         # Transformation parameters
-        self.mx, self.cx = 0, 0
+        self.mx, self.cx = [], []
         self.my, self.cy = 0, 0
         self.is_calibrated = False
 
@@ -46,46 +47,45 @@ class DigitizerApp:
 
     def load_image(self):
         """Opens a file dialog to load an image, resizes it to fit, and displays it."""
-        file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp *.gif")])
-        if file_path:
-            # 1. Open the original image
-            original_image = Image.open(file_path)
+        
+        # 1. Open the original image
+        original_image = Image.open('./Akseli.png')
+        
+        # 2. Define maximum dimensions (e.g., fits comfortably on a standard laptop screen)
+        max_w = 1000 
+        max_h = 600
+        
+        # 3. Calculate the resize ratio to maintain aspect ratio
+        width_ratio = max_w / original_image.width
+        height_ratio = max_h / original_image.height
+        
+        # We take the smaller ratio to ensure it fits both width and height.
+        # We also use min(..., 1.0) so we don't stretch small images up.
+        scale_factor = min(width_ratio, height_ratio, 1.0)
+        
+        new_width = int(original_image.width * scale_factor)
+        new_height = int(original_image.height * scale_factor)
+        
+        # 4. Resize using high-quality resampling (LANCZOS)
+        # This handles compatibility for both new and old Pillow versions
+        try:
+            resample_method = Image.Resampling.LANCZOS
+        except AttributeError:
+            resample_method = Image.ANTIALIAS # For older Pillow versions
             
-            # 2. Define maximum dimensions (e.g., fits comfortably on a standard laptop screen)
-            max_w = 1200 
-            max_h = 900 
-            
-            # 3. Calculate the resize ratio to maintain aspect ratio
-            width_ratio = max_w / original_image.width
-            height_ratio = max_h / original_image.height
-            
-            # We take the smaller ratio to ensure it fits both width and height.
-            # We also use min(..., 1.0) so we don't stretch small images up.
-            scale_factor = min(width_ratio, height_ratio, 1.0)
-            
-            new_width = int(original_image.width * scale_factor)
-            new_height = int(original_image.height * scale_factor)
-            
-            # 4. Resize using high-quality resampling (LANCZOS)
-            # This handles compatibility for both new and old Pillow versions
-            try:
-                resample_method = Image.Resampling.LANCZOS
-            except AttributeError:
-                resample_method = Image.ANTIALIAS # For older Pillow versions
-                
-            self.image = original_image.resize((new_width, new_height), resample_method)
-            self.photo = ImageTk.PhotoImage(self.image)
-            
-            # 5. Update Canvas
-            self.canvas.config(width=new_width, height=new_height)
-            # Clear previous images if any
-            self.canvas.delete("all") 
-            self.canvas.create_image(0, 0, image=self.photo, anchor=tk.NW)
-            
-            # Reset application state
-            self.calibrate_btn.config(state=tk.NORMAL)
-            self.is_calibrated = False
-            self.calibration_points = []
+        self.image = original_image.resize((new_width, new_height), resample_method)
+        self.photo = ImageTk.PhotoImage(self.image)
+        
+        # 5. Update Canvas
+        self.canvas.config(width=new_width, height=new_height)
+        # Clear previous images if any
+        self.canvas.delete("all") 
+        self.canvas.create_image(0, 0, image=self.photo, anchor=tk.NW)
+        
+        # Reset application state
+        self.calibrate_btn.config(state=tk.NORMAL)
+        self.is_calibrated = False
+        self.calibration_points = []
 
     def start_calibration(self):
         """Starts the 4-step calibration process."""
@@ -93,10 +93,10 @@ class DigitizerApp:
             return
         self.calibrating = True
         self.calibration_step = 1
-        self.calibration_points = []
+        self.calibration_points = [[], [], [], [], []]
         self.is_calibrated = False
         self.canvas.delete("calib_mark")
-        messagebox.showinfo("Calibration Step 1/4", "Click on a known point on the **left** side of the X-axis.")
+        messagebox.showinfo("Calibration Step 1/2", "Click on a known point on the **left** side of the X-axis.")
 
     def handle_click(self, event):
         """Handles mouse clicks during the calibration process."""
@@ -107,49 +107,40 @@ class DigitizerApp:
         px = self.canvas.canvasx(event.x)
         py = self.canvas.canvasy(event.y)
         
-        self.calibration_points.append((px, py))
+        self.calibration_points[self.calibration_block].append((px, py))
         # Draw a red marker where clicked
         self.canvas.create_oval(px-4, py-4, px+4, py+4, outline="red", width=2, tags="calib_mark")
 
         # Guide user through the 4 steps
         if self.calibration_step == 1:
             self.calibration_step = 2
-            messagebox.showinfo("Calibration Step 2/4", "Click on a known point on the **right** side of the X-axis.")
+            messagebox.showinfo("Calibration Step 2/2", "Click on a known point on the **right** side of the X-axis.")
         elif self.calibration_step == 2:
-            self.calibration_step = 3
-            messagebox.showinfo("Calibration Step 3/4", "Click on a known point near the **bottom** of the Y-axis.")
-        elif self.calibration_step == 3:
-            self.calibration_step = 4
-            messagebox.showinfo("Calibration Step 4/4", "Click on a known point near the **top** of the Y-axis.")
-        elif self.calibration_step == 4:
             self.finish_calibration()
 
     def finish_calibration(self):
         """Prompts for data values and calculates transformation parameters."""
-        self.calibrating = False
         
         try:
             # Prompt user for the data values corresponding to the clicked points
-            x1_d = simpledialog.askfloat("Input", f"Enter value for X-point 1 (pixel x={self.calibration_points[0][0]:.0f}):")
-            x2_d = simpledialog.askfloat("Input", f"Enter value for X-point 2 (pixel x={self.calibration_points[1][0]:.0f}):")
-            y1_d = simpledialog.askfloat("Input", f"Enter value for Y-point 1 (pixel y={self.calibration_points[2][1]:.0f}):")
-            y2_d = simpledialog.askfloat("Input", f"Enter value for Y-point 2 (pixel y={self.calibration_points[3][1]:.0f}):")
+            x1_d = simpledialog.askfloat("Input", f"Enter value for X-point 1 (pixel x={self.calibration_points[self.calibration_block][0][0]:.0f}):")
+            x2_d = simpledialog.askfloat("Input", f"Enter value for X-point 2 (pixel x={self.calibration_points[self.calibration_block][1][0]:.0f}):")
+            y1_d = 1.000
+            y2_d = 1.040
 
-            if None in [x1_d, x2_d, y1_d, y2_d]:
+            if None in [x1_d, x2_d]:
                  messagebox.showwarning("Cancelled", "Calibration cancelled.")
                  self.canvas.delete("calib_mark")
                  return
             
             # Get pixel coordinates from stored points
-            p1x = self.calibration_points[0][0]
-            p2x = self.calibration_points[1][0]
-            p1y = self.calibration_points[2][1]
-            p2y = self.calibration_points[3][1]
+            p1x = self.calibration_points[self.calibration_block][0][0]
+            p2x = self.calibration_points[self.calibration_block][1][0]
+            p1y = 193.0
+            p2y = 312.0
 
             print(f"p1x: {p1x}")
             print(f"p2x: {p2x}")
-            print(f"p1y: {p1y}")
-            print(f"p2y: {p2y}")
 
             # Basic validation
             if p1x == p2x: raise ValueError("X-points must have different horizontal positions.")
@@ -160,17 +151,24 @@ class DigitizerApp:
             # log10(x_data) = mx * x_pixel + cx
             log_x1 = np.log10(x1_d)
             log_x2 = np.log10(x2_d)
-            self.mx = (log_x2 - log_x1) / (p2x - p1x)
-            self.cx = log_x1 - self.mx * p1x
+            self.mx.append((log_x2 - log_x1) / (p2x - p1x))
+            self.cx.append(log_x1 - self.mx[self.calibration_block] * p1x)
 
             # --- Calculate Linear Y-axis Transformation ---
             # y_data = my * y_pixel + cy
             self.my = (y2_d - y1_d) / (p2y - p1y)
             self.cy = y1_d - self.my * p1y
 
-            self.is_calibrated = True
-            self.canvas.delete("calib_mark") # Clean up markers
-            messagebox.showinfo("Success", "Calibration complete! Move your mouse over the image to read coordinates.")
+            if self.calibration_block == 4:
+                self.is_calibrated = True
+                self.calibrating = False
+                self.canvas.delete("calib_mark") # Clean up markers
+                messagebox.showinfo("Success", "Calibration complete! Move your mouse over the image to read coordinates.")
+            else:
+                self.calibration_block += 1
+                self.calibration_step = 1
+                self.canvas.delete("calib_mark")
+                messagebox.showinfo("Calibration Step 1/2", "Click on a known point on the **left** side of the X-axis.")
 
         except (ValueError, TypeError) as e:
             messagebox.showerror("Calibration Error", str(e))
@@ -190,7 +188,13 @@ class DigitizerApp:
         # Check if mouse is inside the image bounds
         if 0 <= px < self.image.width and 0 <= py < self.image.height:
             # Apply Logarithmic Transformation for X
-            log_val = self.mx * px + self.cx
+            if 0 <= px < self.calibration_points[0][1][0]: index = 0
+            elif self.calibration_points[0][1][0] <= px < self.calibration_points[1][1][0]: index = 1
+            elif self.calibration_points[1][1][0] <= px < self.calibration_points[2][1][0]: index = 2
+            elif self.calibration_points[2][1][0] <= px < self.calibration_points[3][1][0]: index = 3
+            elif self.calibration_points[3][1][0] <= px < self.image.width: index = 4
+
+            log_val = self.mx[index] * px + self.cx[index]
             x_data = np.power(10, log_val)
             
             # Apply Linear Transformation for Y
