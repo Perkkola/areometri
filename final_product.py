@@ -6,32 +6,26 @@ import numpy as np
 class DigitizerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Python Plot Digitizer")
+        self.root.title("Areometri")
 
         # --- GUI Setup ---
         # Top frame for controls and coordinate display
-        self.top_container = tk.Frame(self.root, padx=5, pady=5)
-        self.top_container.pack(side=tk.TOP, fill=tk.X)
+        self.right_container = tk.Frame(self.root, padx=5, pady=5)
+        self.right_container.pack(side=tk.RIGHT, fill=tk.X)
 
         # 2. Control Panel (Left side of top container)
-        self.controls_frame = tk.Frame(self.top_container)
-        self.controls_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        self.load_btn = tk.Button(self.controls_frame, text="1. Load Image", command=self.load_image)
-        self.load_btn.pack(side=tk.LEFT, padx=5)
-
-        self.calibrate_btn = tk.Button(self.controls_frame, text="2. Calibrate Axes", command=self.start_calibration, state=tk.DISABLED)
-        self.calibrate_btn.pack(side=tk.LEFT, padx=5)
+        self.controls_frame = tk.Frame(self.right_container)
+        self.controls_frame.pack(side=tk.TOP, fill=tk.X, expand=True)
 
         # Label to display coordinates at the top right
-        self.coord_label = tk.Label(self.controls_frame, text="Coordinates: N/A", font=("Courier", 12), bd=1, relief=tk.SUNKEN, width=35, anchor=tk.W)
-        self.coord_label.pack(side=tk.RIGHT, padx=10)
+        self.coord_label = tk.Label(self.controls_frame, text="Coordinates: N/A", font=("Courier", 12), bd=1, relief=tk.SUNKEN, width=23, anchor=tk.W, justify='center', compound='center')
+        self.coord_label.pack(side=tk.TOP, padx=10, pady=10)
 
-        self.zoom_size = 150 # Size of the square zoom box in pixels
+        self.zoom_size = 200 # Size of the square zoom box in pixels
         self.zoom_factor = 3
 
-        self.zoom_canvas = tk.Canvas(self.top_container, width=self.zoom_size, height=self.zoom_size, bg="lightgrey", highlightthickness=1, highlightbackground="black")
-        self.zoom_canvas.pack(side=tk.RIGHT, padx=10)
+        self.zoom_canvas = tk.Canvas(self.right_container, width=self.zoom_size, height=self.zoom_size, bg="lightgrey", highlightthickness=1, highlightbackground="black")
+        self.zoom_canvas.pack(side=tk.BOTTOM, padx=10)
         
         # Crosshair for the zoom window (static lines in the center)
         mid = self.zoom_size // 2
@@ -66,22 +60,22 @@ class DigitizerApp:
             [(359.0, 0),
             (396.0, 0)],
             [(396.0, 0),
-            (423.0, 0)],
-            [(423.0, 0),
-            (447.0, 0)],
-            [(447.0, 0),
-            (466.0, 0)],
-            [(466.0, 0),
-            (482.0, 0)],
-            [(482.0, 0),
+            (424.0, 0)],
+            [(424.0, 0),
+            (448.0, 0)],
+            [(448.0, 0),
+            (467.0, 0)],
+            [(467.0, 0),
+            (483.0, 0)],
+            [(483.0, 0),
             (498.0, 0)],
             [(498.0, 0),
             (512.0, 0)],
             [(512.0, 0),
-            (598.0, 0)],
-            [(598.0, 0),
-            (649.0, 0)],
-            [(649.0, 0),
+            (599.0, 0)],
+            [(599.0, 0),
+            (650.0, 0)],
+            [(650.0, 0),
             (686.0, 0)],
             [(686.0, 0),
             (713.0, 0)],
@@ -150,11 +144,9 @@ class DigitizerApp:
         self.my, self.cy = [], []
         self.is_calibrated = False
 
-        # --- Event Bindings ---
-        # Track mouse movement to update coordinates
+
         self.canvas.bind("<Motion>", self.display_coordinates)
-        # Handle clicks for calibration
-        self.canvas.bind("<Button-1>", self.handle_click)
+        self.load_image()
 
     def load_image(self):
         """Opens a file dialog to load an image, resizes it to fit, and displays it."""
@@ -194,7 +186,6 @@ class DigitizerApp:
         self.canvas.create_image(0, 0, image=self.photo, anchor=tk.NW)
         
         # Reset application state
-        self.calibrate_btn.config(state=tk.NORMAL)
         self.is_calibrated = True
         for i in range(21):
             log_x1 = np.log10(self.x_values[i][0])
@@ -245,101 +236,6 @@ class DigitizerApp:
             self.zoom_canvas.tag_raise(self.zoom_image_id) 
             self.zoom_canvas.lower(self.zoom_image_id) # Push image behind red lines
 
-
-    def start_calibration(self):
-        """Starts the 4-step calibration process."""
-        if not self.image:
-            return
-        self.calibrating = True
-        self.calibration_step = 1
-        self.is_calibrated = False
-        self.canvas.delete("calib_mark")
-        messagebox.showinfo("Calibration Step 1/2", "Click on a known point on the **left** side of the X-axis.")
-
-    def handle_click(self, event):
-        """Handles mouse clicks during the calibration process."""
-        if not self.calibrating:
-            return
-
-        # Get coordinates relative to the canvas, accounting for scrolling if added later
-        px = self.canvas.canvasx(event.x)
-        py = self.canvas.canvasy(event.y)
-        
-
-        self.x_calibration_points[self.calibration_block].append((px, py)) if self.axis == 'x' else self.y_calibration_points[self.calibration_block].append((px, py))
-        # Draw a red marker where clicked
-        self.canvas.create_oval(px-4, py-4, px+4, py+4, outline="red", width=2, tags="calib_mark")
-
-        # Guide user through the 4 steps
-        if self.calibration_step == 1:
-            self.calibration_step = 2
-            messagebox.showinfo("Calibration Step 2/2", f"Click on a known point on the **right** side of the {'X' if self.axis == 'x' else 'Y'}-axis.")
-        elif self.calibration_step == 2:
-            self.finish_calibration()
-
-    def finish_calibration(self):
-        """Prompts for data values and calculates transformation parameters."""
-        
-        try:
-            # Prompt user for the data values corresponding to the clicked points
-            if self.axis == 'x':
-                p1 = simpledialog.askfloat("Input", f"Enter value for X-point 1 (pixel x={self.x_calibration_points[self.calibration_block][0][0]:.0f}):")
-                p2 = simpledialog.askfloat("Input", f"Enter value for X-point 2 (pixel x={self.x_calibration_points[self.calibration_block][1][0]:.0f}):")
-            else: 
-                p1 = simpledialog.askfloat("Input", f"Enter value for Y-point 1 (pixel y={self.y_calibration_points[self.calibration_block][0][1]:.0f}):")
-                p2 = simpledialog.askfloat("Input", f"Enter value for Y-point 2 (pixel y={self.y_calibration_points[self.calibration_block][1][1]:.0f}):")
-            if None in [p1, p2]:
-                 messagebox.showwarning("Cancelled", "Calibration cancelled.")
-                 self.canvas.delete("calib_mark")
-                 return
-            
-            # Get pixel coordinates from stored points
-            if self.axis == 'x':
-                p1c = self.x_calibration_points[self.calibration_block][0][0]
-                p2c = self.x_calibration_points[self.calibration_block][1][0]
-            else:
-                p1c = self.y_calibration_points[self.calibration_block][0][1]
-                p2c = self.y_calibration_points[self.calibration_block][1][1]
-
-
-            print(f"p1{'x' if self.axis == 'x' else 'y'}: {p1c}")
-            print(f"p2{'x' if self.axis == 'x' else 'y'}: {p2c}")
-
-            # --- Calculate Logarithmic X-axis Transformation ---
-            # log10(x_data) = mx * x_pixel + cx
-            if self.axis == 'x':
-                log_x1 = np.log10(p1)
-                log_x2 = np.log10(p2)
-                self.mx.append((log_x2 - log_x1) / (p2c - p1c))
-                self.cx.append(log_x1 - self.mx[self.calibration_block] * p1c)
-            else:
-                self.my.append((p2 - p1) / (p2c - p1c))
-                self.cy.append(p1 - self.my[self.calibration_block] * p1c)
-
-            # --- Calculate Linear Y-axis Transformation ---
-            # y_data = my * y_pixel + cy
-
-            if self.calibration_block == 20 and self.axis == 'x':
-                self.calibration_block = 0
-                self.calibration_step = 1
-                self.axis = 'y'
-                self.canvas.delete("calib_mark")
-                messagebox.showinfo("Calibration Step 1/2", "Click on a known point on the **left** side of the Y-axis.")
-
-            elif self.calibration_block == 7 and self.axis == 'y':
-                self.is_calibrated = True
-                self.calibrating = False
-                self.canvas.delete("calib_mark") # Clean up markers
-                messagebox.showinfo("Success", "Calibration complete! Move your mouse over the image to read coordinates.")
-            else:
-                self.calibration_block += 1
-                self.calibration_step = 1
-                self.canvas.delete("calib_mark")
-                messagebox.showinfo("Calibration Step 1/2", f"Click on a known point on the **left** side of the {'X' if self.axis == 'x' else 'Y'}-axis.")
-
-        except (ValueError, TypeError) as e:
-            messagebox.showerror("Calibration Error", str(e))
-            self.canvas.delete("calib_mark")
 
     def display_coordinates(self, event):
         """Updates the coordinate label as the mouse moves."""
