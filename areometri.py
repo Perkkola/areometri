@@ -1,6 +1,8 @@
 import tkinter as tk
+from tkinter import filedialog, simpledialog, messagebox, ttk
 from PIL import Image, ImageTk
 import numpy as np
+from scipy.interpolate import make_interp_spline
 
 class DigitizerApp:
     def __init__(self, root, width, height):
@@ -15,6 +17,29 @@ class DigitizerApp:
 
         self.coord_label = tk.Label(self.controls_frame, text="Coordinates: N/A", font=("Courier", 12), bd=1, relief=tk.SUNKEN, width=23, anchor=tk.W, justify='center', compound='center')
         self.coord_label.pack(side=tk.TOP, padx=10, pady=10)
+
+        self.calculator_frame = tk.Frame(self.right_container)
+        self.calculator_frame.pack(side=tk.BOTTOM, fill=tk.X, expand=True, pady=10)
+        tk.Label(self.calculator_frame, text="Valitse aika:", bg="#f0f0f0").pack(anchor=tk.W, padx=10)
+        self.time_var = tk.StringVar(value="6min")
+        self.time_dropdown = ttk.Combobox(self.calculator_frame, textvariable=self.time_var, values=["1min", "6min", "1h", "5h", "1vrk"], state="readonly")
+        self.time_dropdown.pack(side=tk.TOP, pady=10)
+
+        tk.Label(self.calculator_frame, text="Kohde lämpötila (°C):", bg="#f0f0f0").pack(anchor=tk.W, padx=10)
+        self.ent_temp = tk.Entry(self.calculator_frame)
+        self.ent_temp.pack(padx=10, fill=tk.X)
+        self.ent_temp.insert(0, "21.5")
+
+        tk.Label(self.calculator_frame, text="Kohde Y (Lukema):", bg="#f0f0f0").pack(anchor=tk.W, padx=10)
+        self.ent_y = tk.Entry(self.calculator_frame)
+        self.ent_y.pack(padx=10, fill=tk.X)
+        self.ent_y.insert(0, "1.020")
+
+        self.calc_btn = tk.Button(self.calculator_frame, text="Laske X", command=self.calculate_interpolation, bg="lightgreen", font=("Arial", 10, "bold"))
+        self.calc_btn.pack(padx=10, pady=10, fill=tk.X)
+
+        self.result_label = tk.Label(self.calculator_frame, text="Tulos:\n---", bg="#f0f0f0", font=("Arial", 12), fg="blue")
+        self.result_label.pack(pady=10)
 
         self.zoom_size = 200
         self.zoom_factor = 3
@@ -32,7 +57,32 @@ class DigitizerApp:
         self.image = None
         self.photo = None
         self.zoom_photo = None
-        
+
+        self.y = np.array([1.000, 1.010, 1.020, 1.030, 1.040])
+        self.m1 = np.array([[0.063506, 0.061478, 0.059505, 0.056761, 0.054556],
+                    [0.061478, 0.060000, 0.057565, 0.05499, 0.052853],
+                    [0.059056, 0.057090, 0.054772, 0.052853, 0.050799],
+                    [0.056313, 0.054320, 0.052549, 0.050799, 0.049209]])
+
+        self.m6 = np.array([[0.02559, 0.024789, 0.023823, 0.023077, 0.022178],
+                    [0.024789, 0.024013, 0.023261, 0.022355, 0.021483],
+                    [0.024013, 0.023261, 0.022355, 0.021655, 0.020811],
+                    [0.023077, 0.022355, 0.021483, 0.020977, 0.020000]])
+
+        self.t1 = np.array([[0.008000, 0.007753, 0.007454, 0.00728, 0.00700],
+                    [0.007692, 0.007454, 0.007223, 0.00700, 0.006722],
+                    [0.007454, 0.007223, 0.006943, 0.006732, 0.006507],
+                    [0.007167, 0.007000, 0.006667, 0.006507, 0.006198]])
+
+        self.t5 = np.array([[0.003548, 0.003464, 0.003302, 0.003198, 0.003071],
+                    [0.003464, 0.003302, 0.003173, 0.003073, 0.003000],
+                    [0.003276, 0.003173, 0.003048, 0.002951, 0.002852],
+                    [0.003147, 0.003048, 0.002975, 0.002855, 0.002757]])
+
+        self.vrk1 = np.array([[0.001657, 0.001595, 0.001536, 0.001491, 0.001425],
+                    [0.001595, 0.001536, 0.001491, 0.001436, 0.001372],
+                    [0.001525, 0.001491, 0.001425, 0.001372, 0.001321],
+                    [0.001480, 0.001414, 0.001372, 0.001321, 0.001273]])
 
         self.x_values = [
             [0.0004, 0.0005],
@@ -480,6 +530,61 @@ class DigitizerApp:
 
         self.canvas.bind("<Motion>", self.display_coordinates)
         self.load_image()
+
+    def calculate_interpolation(self):
+        try:
+            time_block = self.time_var.get()
+            target_temp = float(self.ent_temp.get())
+            target_y = float(self.ent_y.get())
+
+            if 14 <= target_temp < 17: ub, lb, x_1, x_2 = 17, 14, 0, 1
+            elif 17 <= target_temp < 20: ub, lb, x_1, x_2  = 20, 17, 1, 2
+            elif 20 <= target_temp <= 23: ub, lb, x_1, x_2  = 23, 20, 2, 3
+
+
+            match time_block:
+                case "1min":
+                    get_diameter = self.create_temperature_interpolator(self.y, self.m1[x_2], self.y ,self.m1[x_1], ub, lb)
+                case "6min":
+                    get_diameter = self.create_temperature_interpolator(self.y, self.m6[x_2], self.y ,self.m6[x_1], ub, lb)
+                case "1h":
+                    get_diameter = self.create_temperature_interpolator(self.y, self.t1[x_2], self.y ,self.t1[x_1], ub, lb)
+                case "5h":
+                    get_diameter = self.create_temperature_interpolator(self.y, self.t5[x_2], self.y ,self.t5[x_1], ub, lb)
+                case "1vrk":
+                    get_diameter = self.create_temperature_interpolator(self.y, self.vrk1[x_2], self.y ,self.vrk1[x_1], ub, lb)
+                
+            result = get_diameter(target_y, target_temp)
+            self.result_label.config(text=f"X = {result:.5f}")
+        except ValueError:
+            messagebox.showerror("Error", "Virheellinen numero.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Lasku epäonnistui: {str(e)}")
+
+    def create_temperature_interpolator(self, y_1, x_1, y_2, x_2, ub, lb):
+        idx_23 = np.argsort(y_1)
+        spline_23 = make_interp_spline(y_1[idx_23], x_1[idx_23], k=3)
+        
+        idx_14 = np.argsort(y_2)
+        spline_14 = make_interp_spline(y_2[idx_14], x_2[idx_14], k=3)
+
+        def predict(reading, temperature):
+            if not (14 <= temperature <= 23):
+                print("Warning: Temperature outside calibrated range (14-23C). Extrapolating.")
+                
+            d_23 = spline_23(reading)
+            d_14 = spline_14(reading)
+            
+            w = (temperature - lb) / (ub - lb)
+            d_target = d_14 + w * (d_23 - d_14)
+            
+            return d_target
+            
+        return predict
+
+
+    # get_diameter = create_temperature_interpolator(y_vals_23, x_vals_23, y_vals_14, x_vals_14, ub, lb)
+    # result = get_diameter(1.020, 21.5)
 
     def load_image(self):
 
